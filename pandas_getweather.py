@@ -22,7 +22,7 @@ from datetime import datetime, date, timedelta
 
 #### You can modify start and end date here
 start_date = date(2017,6,16)
-end_date = date(2017,8,8)
+end_date = date(2017,10,16)
 
 d = start_date
 delta = timedelta(days=1)
@@ -43,6 +43,7 @@ for dt in dt_list:
 
 	df =pd.read_html(url,encoding="utf-8")[1]
 	df = df[1:]
+	
 	df = df.drop(df.index[0])
 	df = df.set_index([0])
 
