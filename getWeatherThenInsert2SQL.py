@@ -28,6 +28,12 @@ import pandas as pd
 from datetime import datetime, date, timedelta
 import pyodbc
 import math
+import sys
+
+if len(sys.argv) > 1:
+	td = timedelta(days=int(sys.argv[1]))
+else:
+	td = timedelta(days=5)
 
 def isFloat(string):
 	try:
@@ -38,12 +44,13 @@ def isFloat(string):
 
 
 from sqlServerUtil import * 
+# sqlServerUtil include (server, database, username, password)
 driver= '{ODBC Driver 13 for SQL Server}'
 cnxn = pyodbc.connect('DRIVER='+driver+';PORT=1433;SERVER='+server+';PORT=1443;DATABASE='+database+';UID='+username+';PWD='+ password)
 cursor = cnxn.cursor()
 
 #### You can modify start and end date here
-start_date = date(2017,6,16)
+start_date = date.today() - td
 end_date = date.today()			# you can use today
 # end_date = date(2017,10,19)	# you can use this to customize day
 

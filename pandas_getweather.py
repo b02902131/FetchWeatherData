@@ -21,8 +21,8 @@ from datetime import datetime, date, timedelta
 
 
 #### You can modify start and end date here
-start_date = date(2017,6,16)
-end_date = date(2017,10,16)
+start_date = date(2018,1,14)
+end_date = date(2018,1,16)
 
 d = start_date
 delta = timedelta(days=1)
