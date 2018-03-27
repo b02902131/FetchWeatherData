@@ -30,10 +30,12 @@ import pyodbc
 import math
 import sys
 
-if len(sys.argv) > 1:
-	td = timedelta(days=int(sys.argv[1]))
-else:
-	td = timedelta(days=5)
+from sqlServerUtil import * 
+
+# sqlServerUtil include (server, database, username, password)
+driver= '{ODBC Driver 13 for SQL Server}'
+cnxn = pyodbc.connect('DRIVER='+driver+';PORT=1433;SERVER='+server+';PORT=1443;DATABASE='+database+';UID='+username+';PWD='+ password)
+cursor = cnxn.cursor()
 
 def isFloat(string):
 	try:
@@ -42,79 +44,88 @@ def isFloat(string):
 	except ValueError:
 		return False
 
+def doGetWeather(timeDeltaDays=5, end_date_offset=0):
+	td = timedelta(days=timeDeltaDays)
+	td_e = timedelta(days=end_date_offset)
+	#### You can modify start and end date here
+	start_date = date.today() - td
+	end_date = date.today() - td_e		# you can use today
+	# end_date = date(2017,10,19)	# you can use this to customize day
 
-from sqlServerUtil import * 
-# sqlServerUtil include (server, database, username, password)
-driver= '{ODBC Driver 13 for SQL Server}'
-cnxn = pyodbc.connect('DRIVER='+driver+';PORT=1433;SERVER='+server+';PORT=1443;DATABASE='+database+';UID='+username+';PWD='+ password)
-cursor = cnxn.cursor()
+	print("  the date range is from", start_date, " to ", end_date)
 
-#### You can modify start and end date here
-start_date = date.today() - td
-end_date = date.today()			# you can use today
-# end_date = date(2017,10,19)	# you can use this to customize day
+	d = start_date
+	delta = timedelta(days=1)
 
-print("  the date range is from", start_date, " to ", end_date)
+	dt_list = []
+	while d <= end_date:
+		dt_list.append(d)
+		d += delta
 
-d = start_date
-delta = timedelta(days=1)
+	url_pre = 'http://e-service.cwb.gov.tw/HistoryDataQuery/DayDataController.do?command=viewMain&station=466880&stname=%25E6%259D%25BF%25E6%25A9%258B&datepicker='
+	for dt in dt_list:
 
-dt_list = []
-while d <= end_date:
-	dt_list.append(d)
-	d += delta
+		print ("  Downloading Data of %s ..."%(dt.strftime("%Y-%m-%d")))
+		dt_str = dt.strftime("%Y-%m-%d")
+		url = url_pre+dt_str
 
-keys = []
-frames = []
-url_pre = 'http://e-service.cwb.gov.tw/HistoryDataQuery/DayDataController.do?command=viewMain&station=466880&stname=%25E6%259D%25BF%25E6%25A9%258B&datepicker='
-for dt in dt_list:
-
-	print ("  Downloading Data of %s ..."%(dt.strftime("%Y-%m-%d")))
-	dt_str = dt.strftime("%Y-%m-%d")
-	url = url_pre+dt_str
-
-	df =pd.read_html(url)[1]
-	df = df[1:]
+		df =pd.read_html(url)[1]
+		df = df[1:]
 	
-	df = df.drop(df.index[0])
-	df = df.set_index([0])
+		df = df.drop(df.index[0])
+		df = df.set_index([0])
 
-	values = df.values
+		values = df.values
 
-	print("\tinsert to SQL database: ", server, ":", database)
-	for h in range(len(values)):
-		s = dt_str + " " + str(h)  	# s = date + time
-		time_in_format = "%Y-%m-%d %H"
-		t_in = datetime.strptime(s, time_in_format)
-		time_out_format = "%Y-%m-%d %H:%M:%S"
-		t_out = datetime.strftime(t_in, time_out_format)
+		## test whether the data anounced
+		first_row_temperature = values[0][2]
+		if not isFloat(first_row_temperature) or math.isnan(float(first_row_temperature)):
+			print("	  (!) weather station hasn't updated! \n	  (!) break;")
+			break
 
-		v = values[h]
-		v_str = ""
-		for i in range(len(v)):
-			if not isFloat(v[i]) or math.isnan(float(v[i])):
-				v_str += ", 0"
-			else:
-				v_str += ", "+str(v[i])	
+		print("\tinsert to SQL database: ", server, ":", database)
+		for h in range(len(values)):
+			s = dt_str + " " + str(h)  	# s = date + time
+			time_in_format = "%Y-%m-%d %H"
+			t_in = datetime.strptime(s, time_in_format)
+			time_out_format = "%Y-%m-%d %H:%M:%S"
+			t_out = datetime.strftime(t_in, time_out_format)
 
-		command = "DECLARE @dt datetime = " + "'" + t_out + "'"
-		command += "\nBEGIN\n\tIF NOT EXISTS( SELECT *FROM WeatherNew WHERE ObsTime = @dt)"
-		command += "\n\tBEGIN \n\t\tInsert into WeatherNew (ObsTime, StnPres, SeaPres, Temperature, Td_dew_point, RH, WS, WD, WSGust, WDGust, Precp, PrecpHour, SunShine, GloblRad, Visb) "
-		command += "\n\t\tVALUES(@dt"+v_str+")"
-		command += "\n\tEND\nEND"
-		# print("cmd =",command)
-		cursor.execute(command)
+			v = values[h]
+			v_str = ""
+			for i in range(len(v)):
+				if not isFloat(v[i]) or math.isnan(float(v[i])):
+					v_str += ", 0"
+				else:
+					v_str += ", "+str(v[i])	
 
-# to check whether it's success
-# cmd2 = "Select * from WeatherNew"
-# cursor.execute(cmd2)
+			command = "DECLARE @dt datetime = " + "'" + t_out + "'"
+			command += "\nBEGIN\n\tIF NOT EXISTS( SELECT *FROM WeatherNew WHERE ObsTime = @dt)"
+			command += "\n\tBEGIN \n\t\tInsert into WeatherNew (ObsTime, StnPres, SeaPres, Temperature, Td_dew_point, RH, WS, WD, WSGust, WDGust, Precp, PrecpHour, SunShine, GloblRad, Visb) "
+			command += "\n\t\tVALUES(@dt"+v_str+")"
+			command += "\n\tEND\nEND"
+			# print("cmd =",command)
+			cursor.execute(command)
 
-# row = cursor.fetchone()
-# print(row)
+	# to check whether it's success
+	# cmd2 = "Select * from WeatherNew"
+	# cursor.execute(cmd2)
 
-# while row:
-# 	# print (str(row[0]) + " " + str(row[1]))
-# 	row = cursor.fetchone()
-# 	print(row)
+	# row = cursor.fetchone()
+	# print(row)
 
-cnxn.commit()
+	# while row:
+	# 	# print (str(row[0]) + " " + str(row[1]))
+	# 	row = cursor.fetchone()
+	# 	print(row)
+
+	cnxn.commit()
+
+if __name__ == "__main__":
+	td, td_e = 5, 0
+	if len(sys.argv) > 1:
+		td = int(sys.argv[1])
+	if len(sys.argv) > 2:
+		td_e = int(sys.argv[2])
+
+	doGetWeather(timeDeltaDays=td, end_date_offset=td_e)
